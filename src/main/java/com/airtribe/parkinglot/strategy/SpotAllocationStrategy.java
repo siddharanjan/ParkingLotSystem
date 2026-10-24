@@ -1,13 +1,13 @@
 package com.airtribe.parkinglot.strategy;
 
-import com.airtribe.parkinglot.model.ParkingFloor;
 import com.airtribe.parkinglot.model.ParkingSpot;
+import com.airtribe.parkinglot.model.SpotPool;
 import com.airtribe.parkinglot.model.VehicleType;
 
-import java.util.List;
+import java.util.Optional;
 
 public interface SpotAllocationStrategy {
-    // Free spots that fit, best first. Caller tries them in order, so if another
-    // thread grabs one in the meantime it just moves on to the next.
-    List<ParkingSpot> candidates(List<ParkingFloor> floors, VehicleType type);
+    // Claims and returns a spot, or empty if nothing fits. The returned spot is already
+    // removed from the pool.
+    Optional<ParkingSpot> acquire(SpotPool pool, VehicleType type);
 }

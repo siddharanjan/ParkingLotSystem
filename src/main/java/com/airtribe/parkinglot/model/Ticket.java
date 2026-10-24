@@ -27,6 +27,7 @@ public final class Ticket {
 
     public synchronized void complete(Instant exitTime, BigDecimal fee) {
         requireActive("complete");
+        // ParkingService clamps the exit time, so this only fires for direct callers
         if (exitTime.isBefore(entryTime)) {
             throw new IllegalArgumentException("Exit time precedes entry time");
         }
@@ -39,7 +40,7 @@ public final class Ticket {
         requireActive("cancel");
         this.status = TicketStatus.CANCELLED;
         this.exitTime = at;
-        this.fee = BigDecimal.ZERO;
+        this.fee = BigDecimal.ZERO.setScale(2);
     }
 
     private void requireActive(String action) {
@@ -49,7 +50,7 @@ public final class Ticket {
         }
     }
 
-    public Duration getDuration(Instant now) {
+    public synchronized Duration getDuration(Instant now) {
         return Duration.between(entryTime, exitTime != null ? exitTime : now);
     }
 

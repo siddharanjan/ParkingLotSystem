@@ -18,6 +18,7 @@ public final class Vehicle {
 
     public VehicleType getType() { return type; }
 
+    // Identity is the plate only, type is left out on purpose: one plate can't be two vehicles.
     @Override
     public boolean equals(Object o) {
         return o instanceof Vehicle v && v.licensePlate.equals(licensePlate);

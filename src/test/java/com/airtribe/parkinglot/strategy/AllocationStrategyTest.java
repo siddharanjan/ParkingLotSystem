@@ -1,11 +1,14 @@
 package com.airtribe.parkinglot.strategy;
 
+import com.airtribe.parkinglot.exception.ParkingLotFullException;
 import com.airtribe.parkinglot.model.ParkingFloor;
+import com.airtribe.parkinglot.model.ParkingLot;
 import com.airtribe.parkinglot.model.ParkingSpot;
+import com.airtribe.parkinglot.model.SpotSize;
 import com.airtribe.parkinglot.model.VehicleType;
 import org.junit.jupiter.api.Test;
-import com.airtribe.parkinglot.model.SpotSize;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -16,8 +19,20 @@ class AllocationStrategyTest {
             ParkingFloor.of(0, 0, 1, 1),
             ParkingFloor.of(1, 1, 1, 1));
 
+    // keeps acquiring until the lot says full, gives back the order spots were handed out
+    private static List<String> drain(ParkingLot lot, SpotAllocationStrategy s, VehicleType t) {
+        List<String> out = new ArrayList<>();
+        while (true) {
+            try {
+                out.add(lot.acquire(t, s).getId());
+            } catch (ParkingLotFullException e) {
+                return out;
+            }
+        }
+    }
+
     private List<String> ids(SpotAllocationStrategy s, VehicleType t) {
-        return s.candidates(floors, t).stream().map(ParkingSpot::getId).toList();
+        return drain(new ParkingLot(floors), s, t);
     }
 
     @Test
@@ -39,35 +54,37 @@ class AllocationStrategyTest {
     }
 
     @Test
-    void occupiedSpotsAreSkipped() {
-        floors.get(1).getSpots().stream().filter(s -> s.getId().equals("F1-S1")).findFirst().get().tryOccupy();
-        assertEquals("F0-M1", ids(new BestFitStrategy(), VehicleType.MOTORCYCLE).get(0));
-    }
-
-    private static void fill(List<ParkingFloor> floors) {
-        floors.forEach(f -> f.getSpots().forEach(ParkingSpot::tryOccupy));
-    }
-
-    @Test
-    void fullLotGivesNoCandidates() {
-        fill(floors);
-        assertTrue(ids(new BestFitStrategy(), VehicleType.MOTORCYCLE).isEmpty());
-        assertTrue(ids(new NearestFloorFirstStrategy(), VehicleType.MOTORCYCLE).isEmpty());
+    void takenSpotsAreSkipped() {
+        ParkingLot lot = new ParkingLot(floors);
+        BestFitStrategy best = new BestFitStrategy();
+        assertEquals("F1-S1", lot.acquire(VehicleType.MOTORCYCLE, best).getId());
+        assertEquals("F0-M1", lot.acquire(VehicleType.MOTORCYCLE, best).getId());
     }
 
     @Test
-    void noFloorsGivesNoCandidates() {
-        assertTrue(new BestFitStrategy().candidates(List.of(), VehicleType.CAR).isEmpty());
-        assertTrue(new NearestFloorFirstStrategy().candidates(List.of(), VehicleType.CAR).isEmpty());
+    void fullLotGivesNothing() {
+        ParkingLot lot = new ParkingLot(floors);
+        drain(lot, new BestFitStrategy(), VehicleType.MOTORCYCLE);
+        assertThrows(ParkingLotFullException.class, () -> lot.acquire(VehicleType.MOTORCYCLE, new BestFitStrategy()));
+        assertThrows(ParkingLotFullException.class, () -> lot.acquire(VehicleType.MOTORCYCLE, new NearestFloorFirstStrategy()));
+    }
+
+    @Test
+    void noFloorsGivesNothing() {
+        ParkingLot empty = new ParkingLot(List.of());
+        assertThrows(ParkingLotFullException.class, () -> empty.acquire(VehicleType.CAR, new BestFitStrategy()));
+        assertThrows(ParkingLotFullException.class, () -> empty.acquire(VehicleType.CAR, new NearestFloorFirstStrategy()));
     }
 
     @Test
     void busFindsNothingWhenOnlyLargeSpotsAreTaken() {
-        floors.forEach(f -> f.getSpots().stream()
-                .filter(s -> s.getSize() == SpotSize.LARGE).forEach(ParkingSpot::tryOccupy));
-        assertTrue(ids(new BestFitStrategy(), VehicleType.BUS).isEmpty());
+        ParkingLot lot = new ParkingLot(floors);
+        BestFitStrategy best = new BestFitStrategy();
+        lot.acquire(VehicleType.BUS, best);
+        lot.acquire(VehicleType.BUS, best);
+        assertThrows(ParkingLotFullException.class, () -> lot.acquire(VehicleType.BUS, best));
         // cars can still use the medium ones
-        assertEquals(List.of("F0-M1", "F1-M1"), ids(new BestFitStrategy(), VehicleType.CAR));
+        assertEquals(List.of("F0-M1", "F1-M1"), drain(lot, best, VehicleType.CAR));
     }
 
     @Test
@@ -79,15 +96,45 @@ class AllocationStrategyTest {
 
     @Test
     void sameSizeAndFloorTiesBrokenBySpotId() {
-        List<ParkingFloor> one = List.of(ParkingFloor.of(0, 0, 3, 0));
-        List<String> got = new BestFitStrategy().candidates(one, VehicleType.CAR).stream()
-                .map(ParkingSpot::getId).toList();
-        assertEquals(List.of("F0-M1", "F0-M2", "F0-M3"), got);
+        ParkingLot one = new ParkingLot(List.of(ParkingFloor.of(0, 0, 3, 0)));
+        assertEquals(List.of("F0-M1", "F0-M2", "F0-M3"), drain(one, new BestFitStrategy(), VehicleType.CAR));
     }
 
     @Test
-    void strategiesDontTouchOccupancy() {
-        ids(new BestFitStrategy(), VehicleType.CAR);
-        assertEquals(5, new BestFitStrategy().candidates(floors, VehicleType.MOTORCYCLE).size());
+    void acquireAndReleaseMoveTheCounters() {
+        ParkingLot lot = new ParkingLot(floors);
+        ParkingSpot s = lot.acquire(VehicleType.CAR, new BestFitStrategy());
+        assertEquals(1, lot.availability().get(SpotSize.MEDIUM));
+        lot.release(s);
+        assertEquals(2, lot.availability().get(SpotSize.MEDIUM));
+        assertEquals(s, lot.acquire(VehicleType.CAR, new BestFitStrategy()), "freed spot is first in line again");
+    }
+
+    @Test
+    void motorcyclesCanBeKeptOutOfLargeSpots() {
+        ParkingLot strict = new ParkingLot(floors, false);
+        assertEquals(List.of("F1-S1", "F0-M1", "F1-M1"), drain(strict, new BestFitStrategy(), VehicleType.MOTORCYCLE));
+        assertEquals(2, strict.availableFor(VehicleType.BUS));
+    }
+
+    @Test
+    void parallelAcquiresNeverHandOutTheSameSpot() throws Exception {
+        for (SpotAllocationStrategy strategy : List.of(new BestFitStrategy(), new NearestFloorFirstStrategy())) {
+            ParkingLot lot = new ParkingLot(List.of(ParkingFloor.of(0, 0, 20, 0), ParkingFloor.of(1, 0, 20, 0)));
+            java.util.Set<String> got = java.util.concurrent.ConcurrentHashMap.newKeySet();
+            java.util.concurrent.atomic.AtomicInteger full = new java.util.concurrent.atomic.AtomicInteger();
+            Thread[] threads = new Thread[80];
+            for (int i = 0; i < threads.length; i++) {
+                threads[i] = new Thread(() -> {
+                    try { got.add(lot.acquire(VehicleType.CAR, strategy).getId()); }
+                    catch (ParkingLotFullException e) { full.incrementAndGet(); }
+                });
+            }
+            for (Thread t : threads) t.start();
+            for (Thread t : threads) t.join();
+            assertEquals(40, got.size());
+            assertEquals(40, full.get());
+            assertEquals(0, lot.availability().get(SpotSize.MEDIUM));
+        }
     }
 }

@@ -1,6 +1,7 @@
 package com.airtribe.parkinglot.model;
 
 import com.airtribe.parkinglot.exception.InvalidTicketStateException;
+import com.airtribe.parkinglot.strategy.BestFitStrategy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -38,7 +39,7 @@ class TicketTest {
     void cancelZeroesFee() {
         ticket.cancel(entry.plusSeconds(60));
         assertEquals(TicketStatus.CANCELLED, ticket.getStatus());
-        assertEquals(BigDecimal.ZERO, ticket.getFee());
+        assertEquals(0, BigDecimal.ZERO.compareTo(ticket.getFee()));
     }
 
     @Test
@@ -74,10 +75,10 @@ class TicketTest {
 
     @Test
     void vehicleTypeFitsLargerSpotsOnly() {
-        assertTrue(VehicleType.MOTORCYCLE.fitsIn(SpotSize.LARGE));
-        assertTrue(VehicleType.CAR.fitsIn(SpotSize.MEDIUM));
-        assertFalse(VehicleType.CAR.fitsIn(SpotSize.SMALL));
-        assertFalse(VehicleType.BUS.fitsIn(SpotSize.MEDIUM));
+        assertEquals(java.util.List.of(SpotSize.SMALL, SpotSize.MEDIUM, SpotSize.LARGE),
+                VehicleType.MOTORCYCLE.compatibleSizesBestFirst());
+        assertEquals(java.util.List.of(SpotSize.MEDIUM, SpotSize.LARGE), VehicleType.CAR.compatibleSizesBestFirst());
+        assertEquals(java.util.List.of(SpotSize.LARGE), VehicleType.BUS.compatibleSizesBestFirst());
     }
 
     @Test
@@ -108,33 +109,43 @@ class TicketTest {
     }
 
     @Test
-    void parkingSpotCanOnlyBeClaimedOnce() {
+    void poolHandsOutEachSpotOnce() {
         ParkingSpot spot = new ParkingSpot("F0-S1", 0, SpotSize.SMALL);
-        assertTrue(spot.tryOccupy());
-        assertFalse(spot.tryOccupy());
-        assertFalse(spot.isFree());
-        assertTrue(spot.release());
-        assertFalse(spot.release());
-        assertTrue(spot.isFree());
+        SpotPool pool = new SpotPool(java.util.List.of(new ParkingFloor(0, java.util.List.of(spot))), true);
+        assertTrue(pool.take(spot));
+        assertFalse(pool.take(spot));
+        assertTrue(pool.pollFirst(SpotSize.SMALL).isEmpty());
+        pool.release(spot);
+        pool.release(spot); // second release shouldn't bump the counter
+        assertEquals(1, pool.availability().get(SpotSize.SMALL));
     }
 
     @Test
-    void lotCountersFollowOccupyAndRelease() {
+    void lotCountersFollowAcquireAndRelease() {
         ParkingLot lot = new ParkingLot(java.util.List.of(ParkingFloor.of(0, 1, 2, 1)));
-        ParkingSpot med = lot.getFloors().get(0).getSpots().stream()
-                .filter(s -> s.getSize() == SpotSize.MEDIUM).findFirst().get();
+        BestFitStrategy best = new BestFitStrategy();
 
         assertEquals(3, lot.availableFor(VehicleType.CAR));
         assertEquals(4, lot.availableFor(VehicleType.MOTORCYCLE));
         assertEquals(1, lot.availableFor(VehicleType.BUS));
 
-        assertTrue(lot.occupy(med));
-        assertFalse(lot.occupy(med));
+        ParkingSpot med = lot.acquire(VehicleType.CAR, best);
+        assertEquals(SpotSize.MEDIUM, med.getSize());
         assertEquals(2, lot.availableFor(VehicleType.CAR));
         assertEquals(1, lot.availability().get(SpotSize.MEDIUM));
 
         lot.release(med);
-        lot.release(med); // second release shouldn't bump the counter
+        lot.release(med);
         assertEquals(2, lot.availability().get(SpotSize.MEDIUM));
+    }
+
+    @Test
+    void listenersHearAboutEveryChange() {
+        ParkingLot lot = new ParkingLot(java.util.List.of(ParkingFloor.of(0, 0, 1, 0)));
+        java.util.List<Integer> seen = new java.util.ArrayList<>();
+        lot.addAvailabilityListener(a -> seen.add(a.get(SpotSize.MEDIUM)));
+        ParkingSpot s = lot.acquire(VehicleType.CAR, new BestFitStrategy());
+        lot.release(s);
+        assertEquals(java.util.List.of(0, 1), seen);
     }
 }

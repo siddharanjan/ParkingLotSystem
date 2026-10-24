@@ -3,6 +3,7 @@ package com.airtribe.parkinglot.strategy;
 import com.airtribe.parkinglot.model.VehicleType;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;
@@ -36,10 +37,10 @@ public class HourlyFeeStrategy implements FeeStrategy {
             throw new IllegalArgumentException("Negative stay");
         }
         if (stay.compareTo(gracePeriod) <= 0) {
-            return BigDecimal.ZERO;
+            return BigDecimal.ZERO.setScale(2);
         }
         long seconds = stay.getSeconds() + (stay.getNano() > 0 ? 1 : 0);
         long hours = (seconds + 3599) / 3600;
-        return hourlyRates.get(type).multiply(BigDecimal.valueOf(hours));
+        return hourlyRates.get(type).multiply(BigDecimal.valueOf(hours)).setScale(2, RoundingMode.HALF_UP);
     }
 }
