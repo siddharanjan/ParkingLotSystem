@@ -3,8 +3,8 @@
 Low-level design of a multi-floor parking lot backend: spot allocation, check-in/out, fee calculation, live availability.
 
 ## Build & test
-    mvn test                 # 31 unit tests
-    mvn package && java -jar target/parkinglot-1.0-SNAPSHOT.jar
+    mvn test                 # 60 unit tests
+    mvn package && java -jar target/parkinglot-1.0.0.jar
 
 ## Layout (`com.airtribe.parkinglot`)
 | Package | Contents |
@@ -15,7 +15,9 @@ Low-level design of a multi-floor parking lot backend: spot allocation, check-in
 | `repository` | `TicketRepository` + in-memory impl |
 | `exception` | lot full, already parked, ticket not found, invalid ticket state |
 
-Relational schema: `src/main/resources/schema.sql`.
+Relational schema: [`src/main/resources/schema.sql`](../src/main/resources/schema.sql).
+
+Flow and class diagrams: [FLOWS.md](FLOWS.md).
 
 ## Key decisions
 - **Allocation**: strategy returns ordered candidates; service claims the first one it wins via CAS.
