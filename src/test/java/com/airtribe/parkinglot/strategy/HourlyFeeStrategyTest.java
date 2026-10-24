@@ -14,29 +14,34 @@ class HourlyFeeStrategyTest {
 
     private BigDecimal fee(VehicleType t, Duration d) { return fees.calculate(t, d); }
 
+    // compare by value so 40 and 40.00 are the same
+    private static void assertFee(BigDecimal expected, BigDecimal actual) {
+        assertEquals(0, expected.compareTo(actual), "expected " + expected + " but was " + actual);
+    }
+
     @Test
     void freeWithinGrace() {
-        assertEquals(BigDecimal.ZERO, fee(VehicleType.CAR, Duration.ZERO));
-        assertEquals(BigDecimal.ZERO, fee(VehicleType.CAR, Duration.ofMinutes(15)));
+        assertFee(BigDecimal.ZERO, fee(VehicleType.CAR, Duration.ZERO));
+        assertFee(BigDecimal.ZERO, fee(VehicleType.CAR, Duration.ofMinutes(15)));
     }
 
     @Test
     void justOverGraceBillsOneHour() {
-        assertEquals(BigDecimal.valueOf(20), fee(VehicleType.CAR, Duration.ofMinutes(15).plusSeconds(1)));
+        assertFee(BigDecimal.valueOf(20), fee(VehicleType.CAR, Duration.ofMinutes(15).plusSeconds(1)));
     }
 
     @Test
     void exactHourBillsOneHourAndStartedHourRoundsUp() {
-        assertEquals(BigDecimal.valueOf(20), fee(VehicleType.CAR, Duration.ofHours(1)));
-        assertEquals(BigDecimal.valueOf(40), fee(VehicleType.CAR, Duration.ofHours(1).plusSeconds(1)));
+        assertFee(BigDecimal.valueOf(20), fee(VehicleType.CAR, Duration.ofHours(1)));
+        assertFee(BigDecimal.valueOf(40), fee(VehicleType.CAR, Duration.ofHours(1).plusSeconds(1)));
     }
 
     @Test
     void rateDependsOnVehicleType() {
         Duration threeHours = Duration.ofHours(3);
-        assertEquals(BigDecimal.valueOf(30), fee(VehicleType.MOTORCYCLE, threeHours));
-        assertEquals(BigDecimal.valueOf(60), fee(VehicleType.CAR, threeHours));
-        assertEquals(BigDecimal.valueOf(150), fee(VehicleType.BUS, threeHours));
+        assertFee(BigDecimal.valueOf(30), fee(VehicleType.MOTORCYCLE, threeHours));
+        assertFee(BigDecimal.valueOf(60), fee(VehicleType.CAR, threeHours));
+        assertFee(BigDecimal.valueOf(150), fee(VehicleType.BUS, threeHours));
     }
 
     @Test
@@ -52,8 +57,8 @@ class HourlyFeeStrategyTest {
                 VehicleType.MOTORCYCLE, BigDecimal.TEN,
                 VehicleType.CAR, BigDecimal.TEN,
                 VehicleType.BUS, BigDecimal.TEN), Duration.ofMinutes(30));
-        assertEquals(BigDecimal.ZERO, f.calculate(VehicleType.CAR, Duration.ofMinutes(30)));
-        assertEquals(BigDecimal.TEN, f.calculate(VehicleType.CAR, Duration.ofMinutes(31)));
+        assertFee(BigDecimal.ZERO, f.calculate(VehicleType.CAR, Duration.ofMinutes(30)));
+        assertFee(BigDecimal.TEN, f.calculate(VehicleType.CAR, Duration.ofMinutes(31)));
     }
 
     @Test
@@ -62,25 +67,36 @@ class HourlyFeeStrategyTest {
                 VehicleType.MOTORCYCLE, BigDecimal.TEN,
                 VehicleType.CAR, BigDecimal.TEN,
                 VehicleType.BUS, BigDecimal.TEN), Duration.ZERO);
-        assertEquals(BigDecimal.ZERO, f.calculate(VehicleType.CAR, Duration.ZERO));
-        assertEquals(BigDecimal.TEN, f.calculate(VehicleType.CAR, Duration.ofNanos(1)));
+        assertFee(BigDecimal.ZERO, f.calculate(VehicleType.CAR, Duration.ZERO));
+        assertFee(BigDecimal.TEN, f.calculate(VehicleType.CAR, Duration.ofNanos(1)));
     }
 
     @Test
     void nanosecondsPastAnHourRoundUp() {
-        assertEquals(BigDecimal.valueOf(20), fee(VehicleType.CAR, Duration.ofHours(1)));
-        assertEquals(BigDecimal.valueOf(40), fee(VehicleType.CAR, Duration.ofHours(1).plusNanos(1)));
+        assertFee(BigDecimal.valueOf(20), fee(VehicleType.CAR, Duration.ofHours(1)));
+        assertFee(BigDecimal.valueOf(40), fee(VehicleType.CAR, Duration.ofHours(1).plusNanos(1)));
     }
 
     @Test
     void justUnderGraceInNanosIsFree() {
-        assertEquals(BigDecimal.ZERO, fee(VehicleType.BUS, Duration.ofMinutes(15).minusNanos(1)));
+        assertFee(BigDecimal.ZERO, fee(VehicleType.BUS, Duration.ofMinutes(15).minusNanos(1)));
     }
 
     @Test
     void longStaysScaleLinearly() {
-        assertEquals(BigDecimal.valueOf(24 * 7 * 20L), fee(VehicleType.CAR, Duration.ofDays(7)));
-        assertEquals(BigDecimal.valueOf(24 * 30 * 50L), fee(VehicleType.BUS, Duration.ofDays(30)));
+        assertFee(BigDecimal.valueOf(24 * 7 * 20L), fee(VehicleType.CAR, Duration.ofDays(7)));
+        assertFee(BigDecimal.valueOf(24 * 30 * 50L), fee(VehicleType.BUS, Duration.ofDays(30)));
+    }
+
+    @Test
+    void feesAreRoundedToTwoDecimals() {
+        assertEquals(2, fee(VehicleType.CAR, Duration.ofHours(2)).scale());
+        assertEquals(2, fee(VehicleType.CAR, Duration.ZERO).scale());
+        HourlyFeeStrategy odd = new HourlyFeeStrategy(Map.of(
+                VehicleType.MOTORCYCLE, new BigDecimal("0.005"),
+                VehicleType.CAR, new BigDecimal("0.005"),
+                VehicleType.BUS, new BigDecimal("0.005")), Duration.ZERO);
+        assertEquals(new BigDecimal("0.01"), odd.calculate(VehicleType.CAR, Duration.ofHours(1))); // half up
     }
 
     @Test

@@ -1,18 +1,20 @@
 package com.airtribe.parkinglot.model;
 
+import java.util.List;
+
 public enum VehicleType {
-    MOTORCYCLE(SpotSize.SMALL),
-    CAR(SpotSize.MEDIUM),
-    BUS(SpotSize.LARGE);
+    MOTORCYCLE(List.of(SpotSize.SMALL, SpotSize.MEDIUM, SpotSize.LARGE)),
+    CAR(List.of(SpotSize.MEDIUM, SpotSize.LARGE)),
+    BUS(List.of(SpotSize.LARGE));
 
-    private final SpotSize minimumSpotSize;
+    private final List<SpotSize> compatibleSizes;
 
-    VehicleType(SpotSize minimumSpotSize) {
-        this.minimumSpotSize = minimumSpotSize;
+    VehicleType(List<SpotSize> compatibleSizes) {
+        this.compatibleSizes = compatibleSizes;
     }
 
-    // bigger spots are fine too, e.g. a bike can use a large spot
-    public boolean fitsIn(SpotSize size) {
-        return size.ordinal() >= minimumSpotSize.ordinal();
+    // spot sizes this vehicle can use, tightest fit first
+    public List<SpotSize> compatibleSizesBestFirst() {
+        return compatibleSizes;
     }
 }
